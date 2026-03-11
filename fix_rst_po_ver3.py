@@ -1,10 +1,10 @@
 import re
 import polib
 
-INPUT_PO = "/Users/toshihio_nakai/Downloads/ODOOドキュメント翻訳/inventory_and_mrp/odoo-19-doc-inventory_and_mrp-vi/odoo-19-doc-inventory_and_mrp-vi.po_translated.po"
-OUTPUT_PO = "/Users/toshihio_nakai/Downloads/ODOOドキュメント翻訳/inventory_and_mrp/odoo-19-doc-inventory_and_mrp-vi/odoo-19-doc-inventory_and_mrp-vi.po_translated.po_fixed.po"
+INPUT_PO = "input.po"
+OUTPUT_PO = "output.po"
 
-# 保護対象のRST/Sphinx role
+# RST / Sphinx roles that must be preserved during translation
 PROTECTED_ROLES = ["guilabel", "menuselection", "icon", "ref", "doc"]
 
 ROLE_PATTERN = re.compile(
@@ -34,8 +34,11 @@ def extract_html_tags(text: str):
 
 def replace_matches_by_order(text: str, pattern: re.Pattern, source_tokens: list[str]) -> str:
     """
-    text 内の pattern マッチ部分を、source_tokens で左から順に置換する。
-    数がズレる場合は共通個数だけ置換。
+    Replace pattern matches in the text using tokens from source_tokens
+    in left-to-right order.
+
+    If the number of matches differs, only the common number of items
+    will be replaced.
     """
     matches = list(pattern.finditer(text))
     if not matches or not source_tokens:
@@ -58,7 +61,9 @@ def replace_matches_by_order(text: str, pattern: re.Pattern, source_tokens: list
 
 def replace_role_tokens_from_msgid(msgid: str, msgstr: str) -> str:
     """
-    msgstr 内の protected role を、msgid の role で左から順に置換。
+    Restore protected roles in msgstr using the roles from msgid.
+
+    Example:
     :guilabel:`日本語` → :guilabel:`English`
     """
     msgid_tokens = extract_full_role_tokens(msgid)
@@ -67,8 +72,10 @@ def replace_role_tokens_from_msgid(msgid: str, msgstr: str) -> str:
 
 def restore_placeholders_from_msgid(msgid: str, msgstr: str) -> str:
     """
-    placeholder を原文準拠に戻す。
-    例: 残り%s列 の %s を保護
+    Restore placeholders based on the original msgid.
+
+    Example:
+    Remaining %s columns → keep %s unchanged
     """
     msgid_tokens = extract_placeholders(msgid)
     return replace_matches_by_order(msgstr, PLACEHOLDER_PATTERN, msgid_tokens)
@@ -76,8 +83,10 @@ def restore_placeholders_from_msgid(msgid: str, msgstr: str) -> str:
 
 def restore_html_tags_from_msgid(msgid: str, msgstr: str) -> str:
     """
-    HTMLタグを原文準拠に戻す。
-    例: <strong>配送日</strong>
+    Restore HTML tags according to the original msgid.
+
+    Example:
+    <strong>Delivery date</strong>
     """
     msgid_tokens = extract_html_tags(msgid)
     return replace_matches_by_order(msgstr, HTML_TAG_PATTERN, msgid_tokens)
@@ -85,12 +94,12 @@ def restore_html_tags_from_msgid(msgid: str, msgstr: str) -> str:
 
 def restore_missing_roles_from_msgid(msgid: str, msgstr: str) -> str:
     """
-    msgid に role があるのに msgstr に role が消えている場合、
-    単純なケースだけ補う。
-    例:
+    If a role exists in msgid but disappears in msgstr,
+    attempt to restore simple cases.
+
+    Example:
       msgid  = Click :guilabel:`Send by Email` button.
-      msgstr = :guilabel: メールで送信 ボタン...
-    のような壊れ方に対して、最低限 role を元に戻しやすくする。
+      msgstr = :guilabel: Send by Email button...
     """
     msgid_roles = extract_full_role_tokens(msgid)
     msgstr_roles = extract_full_role_tokens(msgstr)
@@ -98,13 +107,11 @@ def restore_missing_roles_from_msgid(msgid: str, msgstr: str) -> str:
     if not msgid_roles:
         return msgstr
 
-    # すでに数が合っていれば何もしない
     if len(msgid_roles) == len(msgstr_roles):
         return msgstr
 
     fixed = msgstr
 
-    # :guilabel: の後に空白だけで本文が続く壊れ方を補正
     fixed = re.sub(
         r":(" + "|".join(PROTECTED_ROLES) + r"):\s+",
         lambda m: msgid_roles[0].split("`")[0] + "`" if msgid_roles else m.group(0),
@@ -117,36 +124,33 @@ def restore_missing_roles_from_msgid(msgid: str, msgstr: str) -> str:
 
 def fix_inline_markup_spacing(text: str) -> str:
     """
-    インラインマークアップの直後に文字がくっつく問題を修正
+    Fix spacing issues after inline markup elements.
     """
 
-    # **text**word -> **text** word
+    # **text**word → **text** word
     text = re.sub(r"(\*\*[^*\n]+\*\*)(\S)", r"\1 \2", text)
 
-    # *text*word -> *text* word
+    # *text*word → *text* word
     text = re.sub(r"(?<!\*)(\*[^*\n]+\*)(\S)", r"\1 \2", text)
 
-    # :role:`text`word -> :role:`text` word
+    # :role:`text`word → :role:`text` word
     text = re.sub(
         r"(:(" + "|".join(PROTECTED_ROLES) + r"):`[^`]+`)(\S)",
         r"\1 \3",
         text,
     )
 
-    # 句読点の直後に role
-    # 例: 、:guilabel:`Name` -> 、 :guilabel:`Name`
+    # punctuation immediately followed by role
     text = re.sub(
         r"([、。．，；：])(:(" + "|".join(PROTECTED_ROLES) + r"):`)",
         r"\1 \2",
         text,
     )
 
-    # HTMLタグ直後の直結
-    # 例: </strong>配送日 -> </strong> 配送日
+    # HTML tag directly attached to text
     text = re.sub(r"(</?[A-Za-z][A-Za-z0-9]*(?:\s+[^<>]*?)?>)(\S)", r"\1 \2", text)
 
-    # placeholder 直後の直結はそのままでもよいが、
-    # 英数記号が不自然にくっつく場合だけ空白を補う
+    # placeholder directly attached to alphabetic characters
     text = re.sub(r"(%(?:\([^)]+\))?[sdif])([A-Za-z])", r"\1 \2", text)
 
     return text
@@ -154,12 +158,10 @@ def fix_inline_markup_spacing(text: str) -> str:
 
 def normalize_spaces(text: str) -> str:
     """
-    スペースの整形
+    Normalize spacing.
     """
-    # 連続スペースを1つに
     text = re.sub(r"[ \t]{2,}", " ", text)
 
-    # 行頭・行末の余計なスペース削除（各行ごと）
     lines = text.splitlines()
     lines = [line.strip() for line in lines]
     return "\n".join(lines)
@@ -167,31 +169,28 @@ def normalize_spaces(text: str) -> str:
 
 def fix_rst(msgid: str, msgstr: str) -> str:
     """
-    ver3:
-    1. role を原文準拠で復元
-    2. placeholder を復元
-    3. HTMLタグを復元
-    4. role消失の軽微ケース補正
-    5. spacing 修正
-    6. スペース整形
+    Version 3 processing flow:
+
+    1. Restore roles based on msgid
+    2. Restore placeholders
+    3. Restore HTML tags
+    4. Fix simple cases where roles disappeared
+    5. Fix inline markup spacing
+    6. Normalize spaces
     """
     if not msgstr:
         return msgstr
 
     fixed = msgstr
 
-    # 原文準拠に戻す
     fixed = replace_role_tokens_from_msgid(msgid, fixed)
     fixed = restore_placeholders_from_msgid(msgid, fixed)
     fixed = restore_html_tags_from_msgid(msgid, fixed)
 
-    # role が部分的に壊れたケースを軽く補正
     fixed = restore_missing_roles_from_msgid(msgid, fixed)
 
-    # spacing 修正
     fixed = fix_inline_markup_spacing(fixed)
 
-    # 最後に軽く整形
     fixed = normalize_spaces(fixed)
 
     return fixed
