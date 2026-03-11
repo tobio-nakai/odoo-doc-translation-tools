@@ -1,5 +1,7 @@
 # Odoo Documentation AI Translation Tools
 
+![Odoo AI Translation Pipeline](images/pipeline.png)
+
 Tools for translating Odoo documentation `.po` files using AI and fixing RST (reStructuredText) formatting issues.
 
 These scripts were created to help translators speed up the Odoo documentation translation workflow.
