@@ -3,8 +3,8 @@ from openai import OpenAI
 
 client = OpenAI()
 
-INPUT_FILE = "/Users/toshihio_nakai/Downloads/odoo-19-doc-hr-id.po"
-OUTPUT_FILE = "/Users/toshihio_nakai/Downloads/odoo-19-doc-hr-id.po_translated.po"
+INPUT_FILE = "input.po"
+OUTPUT_FILE = "output.po"
 
 BATCH_SIZE = 20
 
